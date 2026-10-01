@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teller · a Web Ledgers teller on txbt4</title>
+<meta name="description" content="A teller for Web Ledgers: accounts are did:nostr keys, deposits one taproot address per account, withdrawals and transfers signed requests. Test coins (txbt4). Proposal: https://github.com/solidpayorg/webledgers/issues/7">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@b8cbf6337c7450fe14ddc5bce00c7280059aab5d/ https://cdn.jsdelivr.net/gh/sidestr/spec@e8deb63161c7459ed39c01d2ca9fda3d860b65b6/; connect-src 'self' https://cdn.jsdelivr.net https://mempool.guide wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<style>
+  :root { --bg: #fbfaf7; --fg: #1e1d1a; --mut: #6b675f; --line: #ddd8cc; --ok: #1c7a3c; --bad: #b3261e; --warn: #8a5a00; --link: #1f5fa3; --card: #fff; --mono: ui-monospace, Menlo, Consolas, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15161a; --fg: #ebe9e2; --mut: #a39f94; --line: #333640; --card: #1d1f25; --link: #7fb0ff; --ok: #5fcf7f; --bad: #ff7a70; --warn: #e8b547; } }
+  html { background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+  body { margin: 0; padding: 0 16px 48px; max-width: 880px; margin-inline: auto; }
+  h1 { font-size: 1.5rem; margin: 1.2rem 0 .2rem; } h2 { font-size: 1.1rem; margin: 1.4rem 0 .5rem; }
+  .sub { color: var(--mut); margin: 0 0 1rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 10px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); min-width: 0; }
+  input.mono, .mono { font-family: var(--mono); font-size: .9em; }
+  input.wide { flex: 1 1 24rem; }
+  button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); cursor: pointer; min-height: 32px; }
+  button.p { background: var(--link); color: #fff; border-color: var(--link); } button:disabled { opacity: .55; cursor: not-allowed; }
+  .mut { color: var(--mut); } .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .tiny { font-size: .85em; } a { color: var(--link); }
+  table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; } td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .wrap { overflow-wrap: anywhere; }
+  details > summary { cursor: pointer; }
+  [hidden] { display: none !important; }
+  #notice { position: sticky; top: 0; z-index: 2; }
+  #notice:empty { display: none; }
+  .n-ok { border-left: 4px solid var(--ok); } .n-bad { border-left: 4px solid var(--bad); } .n-info { border-left: 4px solid var(--link); }
+</style>
+</head>
+<body>
+<h1>Teller</h1>
+<p class="sub">A Web Ledgers teller on <b>txbt4</b> (test coins, no value): accounts are did:nostr keys, deposits one address per account, withdrawals and transfers signed requests. <a href="https://github.com/solidpayorg/webledgers/issues/7">How it works</a> · <a href="https://github.com/solidpayorg/teller">source</a></p>
+<div id="notice" role="status" aria-live="polite"></div>
+
+<div class="card">
+  <h2 style="margin-top:0">Ledger</h2>
+  <div class="row"><label for="lhash">Ledger hash:</label><input id="lhash" class="mono wide" placeholder="64 hex characters, or ?ledger=… in the address" autocomplete="off" spellcheck="false"><button id="lload" class="p" type="button">Load</button></div>
+  <div id="linfo" class="tiny mut">No ledger loaded. A ledger is published by its operator as a Nostr event; its hash is the identity.</div>
+  <div id="ltable"></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Your account</h2>
+  <div class="row" id="signin">
+    <button id="nip07" type="button">Sign in with a Nostr extension</button>
+    <span class="mut">or</span>
+    <input id="keyin" class="mono wide" placeholder="a secret key (64 hex) kept in this browser" autocomplete="off" spellcheck="false">
+    <button id="keyuse" type="button">Use it</button>
+    <button id="keynew" type="button">Make one</button>
+  </div>
+  <div id="acct" hidden>
+    <div class="row">Signed in as <span class="mono wrap" id="adid"></span> <button id="signout" type="button" class="tiny">Sign out</button></div>
+    <div class="row">Balance: <b id="abal">…</b></div>
+    <div class="row"><span>Deposit address:</span> <span class="mono wrap" id="aaddr">…</span> <button id="acopy" type="button" class="tiny">Copy</button> <a id="apay" href="#" target="_blank" rel="noopener" hidden>Pay with Reef…</a></div>
+    <div class="tiny mut">Only you and the operator can derive this address from the ledger's hash and your did; the operator credits what lands here after the ledger's confirmations. Then press Join so the operator watches it.</div>
+    <div class="row"><button id="ajoin" type="button" class="p">Join this ledger</button></div>
+    <details><summary>Withdraw</summary>
+      <div class="row"><label for="wamt">Amount (sat):</label><input id="wamt" inputmode="numeric" placeholder="at least 546"><label for="wto">to txbt4 address:</label><input id="wto" class="mono wide" placeholder="tb1p…" spellcheck="false"><button id="wgo" type="button">Request withdrawal</button></div>
+      <div class="tiny mut">The operator pays it out by hand and the ledger then shows the debit.</div>
+    </details>
+    <details><summary>Transfer</summary>
+      <div class="row"><label for="tamt">Amount (sat):</label><input id="tamt" inputmode="numeric"><label for="tto">to account:</label><input id="tto" class="mono wide" placeholder="did:nostr:…" spellcheck="false"><button id="tgo" type="button">Request transfer</button></div>
+    </details>
+    <div id="aout" class="tiny"></div>
+  </div>
+</div>
+
+<details class="card" id="opcard">
+  <summary><b>Operator</b> <span class="mut">— holds the key the deposits are paid to; creates the ledger, credits deposits, pays withdrawals</span></summary>
+  <div class="row" style="margin-top:8px"><input id="opkey" class="mono wide" placeholder="the operator's secret key (64 hex), kept in this browser" autocomplete="off" spellcheck="false"><button id="opuse" type="button">Use it</button><button id="opnew" type="button">Make one</button></div>
+  <div id="opinfo" class="tiny mut"></div>
+  <div class="row"><label for="opname">New ledger name:</label><input id="opname" placeholder="Table 7"><label for="opconf">confirmations:</label><input id="opconf" inputmode="numeric" value="1" style="width:4rem"><button id="opcreate" type="button">Create and publish</button></div>
+  <div id="opledger" hidden>
+    <div class="row"><button id="opscan" type="button" class="p">Scan deposits and requests</button><button id="oppublish" type="button">Publish the ledger</button><span id="opstat" class="tiny mut"></span></div>
+    <div id="opreqs"></div>
+    <div id="opcoins" class="tiny mut"></div>
+  </div>
+</details>
+
+<p class="tiny mut">Keys stay in this browser (localStorage); nothing here is encrypted, which is fine for test coins and nothing else. Code pinned by commit from the CDN: the engine (bitcoin-desktop/schema), the sidestr library (keys, signing, addresses, relays). Chain data from mempool.guide/testnet4. AGPL-3.0-or-later.</p>
+<script type="module" src="teller.js"></script>
+</body>
+</html>
