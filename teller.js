@@ -54,7 +54,8 @@ async function publishEvent(ev) { if (DRY) return { dry: 'not published (?dry=1)
 const okCount = (res) => Object.values(res).filter((r) => r === 'ok').length;
 
 // ---- the chain, through the explorer
-const api = async (p, init) => { const r = await fetch(ESPLORA + p, init); if (!r.ok) throw new Error(`${p}: ${r.status} ${(await r.text()).slice(0, 120)}`); return r; };
+// an error from the explorer's node, in its own words (a refused broadcast says why: "min relay fee not met", "dust"…)
+const api = async (p, init) => { const r = await fetch(ESPLORA + p, init); if (!r.ok) { let body = (await r.text()).slice(0, 400); try { const j = JSON.parse(body); body = j.error ?? body; } catch {} throw new Error(`${p}: ${r.status} ${body}`); } return r; };
 const tipHeight = async () => Number(await (await api('/blocks/tip/height')).text());
 const utxosOf = async (addr) => (await api(`/address/${addr}/utxo`)).json();
 const broadcast = async (hex) => { if (DRY) return 'dry-run-no-txid'; return (await api('/tx', { method: 'POST', body: hex })).text(); };

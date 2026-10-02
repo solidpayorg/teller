@@ -30,11 +30,17 @@ t('amounts are whole satoshis, as strings in the ledger, never floats or negativ
 
 // ---- deposit addresses
 const dA = T.depositAddress(deps, { operatorPoint: opPoint, ledgerHash: L.hash, account: A });
-t('a deposit address: a taproot output of the operator\'s point tweaked by tagged(ledgerHash || account || nonce)', dA.script === '5120' + dA.xOnly && /^tb1p/.test(dA.address) && dA.point === keys.tweakPoint(keys.basePoint(opPoint), dA.tweak) && dA.account === A);
+t('a deposit address: a taproot output of the operator\'s point tweaked by tagged(ledgerHash || account || nonce)', dA.script === '5120' + dA.xOnly && /^tb1p/.test(dA.address) && dA.point === keys.tweakPoint('02' + keys.xOnly(opPoint), dA.tweak) && dA.account === A); // the did's point, 02, whatever opPoint's parity
 t('anyone recomputes it from the operator\'s did alone (the 02 point): the same address', T.depositAddress(deps, { operatorPoint: opDid, ledgerHash: L.hash, account: A }).address === T.depositAddress(deps, { operatorPoint: keys.normalize(opKey) && keys.publicKey(keys.normalize(opKey)), ledgerHash: L.hash, account: A }).address);
 const L2 = T.newLedger(deps, { operator: opDid, name: 'Table 8', created: 1759300000 });
 t('two ledgers give two addresses for the same account from the same operator; two accounts on one ledger likewise; nonce 1 another again', T.depositAddress(deps, { operatorPoint: opPoint, ledgerHash: L2.hash, account: A }).address !== dA.address && T.depositAddress(deps, { operatorPoint: opPoint, ledgerHash: L.hash, account: B }).address !== dA.address && T.depositAddress(deps, { operatorPoint: opPoint, ledgerHash: L.hash, account: A, nonce: 1 }).address !== dA.address);
 t('the operator\'s secret for a deposit signs for its output (normalise once, add the tweak, the sign inside the signing)', (() => { const d = T.depositSecret(deps, opKey, dA.tweak); const msg = hash.sha256(hash.hexToBytes(dA.xOnly)); return secp.verifySchnorr(msg, signer.schnorrSign(msg, d), hash.hexToBytes(dA.xOnly)); })());
+{ // an operator whose secret gives an odd-y point: the address and the secret must still agree (the did is the 02 point)
+  let oddKey = signer.randomKey(); while (keys.publicKey(oddKey)[1] !== '3') oddKey = signer.randomKey();
+  const oddPoint = keys.publicKey(oddKey), dOdd = T.depositAddress(deps, { operatorPoint: oddPoint, ledgerHash: L.hash, account: A });
+  const msg = hash.sha256(hash.hexToBytes(dOdd.xOnly)); const sOdd = T.depositSecret(deps, oddKey, dOdd.tweak);
+  t('an odd-y operator point: the deposit address from the point, from the did and from the normalised secret all agree, and the secret signs for it', dOdd.address === T.depositAddress(deps, { operatorPoint: keys.did(oddPoint), ledgerHash: L.hash, account: A }).address && keys.publicKey(sOdd) === dOdd.point && secp.verifySchnorr(msg, signer.schnorrSign(msg, sOdd), hash.hexToBytes(dOdd.xOnly)));
+}
 t('the watch list covers every account the ledger knows and any that joined', T.watchList(deps, L, opPoint, [keys.did(keys.publicKey(signer.randomKey()))]).length === 3);
 
 // ---- requests
@@ -55,6 +61,7 @@ const dOp = T.depositAddress(deps, { operatorPoint: opPoint, ledgerHash: L.hash,
 const p = T.planPayout({ coins, amount: 50000, rate: 1, toScript: '5120' + '33'.repeat(32), changeScript: dOp.script });
 t('planPayout picks enough deposits, pays the amount, returns change above dust, fee at the rate', p.picked.length === 2 && p.outputs[0].value === 50000 && p.outputs[1].scriptPubKey === dOp.script && p.change === 70000 - 50000 - p.fee && p.fee >= 1 && p.fee < 400);
 const s = T.signPayout(deps, p, opKey);
+t('the planned fee covers the signed transaction\'s real size at the rate (the estimate is not short: a payout refused as "154 < 155" taught this)', s.fee === undefined && p.fee >= Math.ceil(1 * s.vsize) && s.vsize === T.vsizeOf(k, s.tx) && Math.ceil(11 + 58 * 2 + 43 * 2) >= s.vsize);
 t('signPayout signs input 0 with A\'s deposit secret and input 1 with B\'s (two different keys), and every input passes the chain\'s script check (unified sighash beside BLAKE2b)', s.tx.witness.length === 2 && s.tx.witness[0][0] !== s.tx.witness[1][0] && s.tx.witness.every((w) => w[0].length === 130) && /^[0-9a-f]{64}$/.test(s.txid) && s.hex.length > 200 && txsign.usesUnifiedSighash(k));
 t('a payout signed with the wrong operator secret fails the script check and nothing is paid', throws(() => T.signPayout(deps, p, signer.randomKey()), /script check/));
 t('a payout beyond the deposits held, or below 546 sat, is refused in words', throws(() => T.planPayout({ coins, amount: 70000, rate: 1, toScript: '5120' + '33'.repeat(32), changeScript: dOp.script }), /do not cover/) && throws(() => T.planPayout({ coins, amount: 100, rate: 1, toScript: '00', changeScript: '00' }), /at least 546/));
