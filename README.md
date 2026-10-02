@@ -13,10 +13,17 @@ Live: https://solidpayorg.github.io/teller/ — on **txbt4**, the BLAKE2b testne
 
 What it is not: not private (anyone who knows the operator's point can link a ledger's deposit addresses), not hardware-wallet signable (a plain additive tweak; see the proposal for the BIP 341 tree form), and custodial: the operator can refuse a withdrawal. It is checkable: every deposit traces to an account from public data, every change is a signed request or a deposit seen on-chain.
 
+## The automatic operator
+
+`bin/operator.mjs` does what the operator panel does by hand, every minute, unattended: it applies transfers, notes joins, credits confirmed deposits seen through the explorer, pays withdrawals under two caps (`--max-payout` per payout, `--max-hour` per hour, defaults 100,000 and 500,000 sat; the rest wait with a reason in the log, for a hand on the page) and publishes the ledger when anything changed. The secret is read from a file (`--key-file`), never the command line; the state (the ledger, the joined accounts, a status line) lives in `--dir`. A payout is noted on disk before it is broadcast and finished after, so a crash between the two re-broadcasts the same transaction rather than signing a second one. `--once` runs one tick, `--dry` broadcasts and publishes nothing.
+
+    node bin/operator.mjs --key-file ~/.teller/x/operator.key --ledger <hash> --dir ~/.teller/x [--every 60] [--max-payout 100000] [--max-hour 500000] [--once] [--dry]
+
 ## Files
 
 - `lib/teller.mjs`: the rules, pure (no DOM, storage or network): the ledger and its hash, credit/debit/transfer applied once, deposit addresses and secrets, requests built and verified, payouts planned and signed per input and checked by the kernel.
 - `teller.js`, `index.html`: the page. Libraries pinned by commit from the CDN: the engine (bitcoin-desktop/schema) and the sidestr library (keys, signing, addresses, relays). Chain data from mempool.guide/testnet4. `?dry=1` publishes and broadcasts nothing.
+- `lib/operator.mjs`, `test/operator-test.mjs`: the operator's decisions, pure: which withdrawals to pay this tick, oldest first under the caps, and why the rest wait.
 - `test/teller-test.mjs`: `npm test` (`SCHEMA`, `BLAKETESTNODE`, `SIDESTR_LIB` pointing at checkouts, defaults under `~`), 22 checks against the kernel, including a two-input payout signed with two different derived secrets passing the chain's script check.
 
 ## Releasing

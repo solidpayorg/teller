@@ -1,0 +1,24 @@
+// lib/operator.mjs: withdrawals are paid oldest first under the caps; the rest wait with a reason, never dropped
+import os from 'node:os';
+const H = (p) => p.replace(/^~/, os.homedir());
+const SCHEMA = H(process.env.SCHEMA ?? '~/bitcoin-desktop/schema');
+const [hash, T, O] = await Promise.all([import(`${SCHEMA}/codec/hash.js`), import('../lib/teller.mjs'), import('../lib/operator.mjs')]);
+let ok = 0, bad = 0;
+const t = (name, cond, detail = '') => { console.log(`  ${cond ? 'PASS' : 'FAIL'}  ${name}${cond || !detail ? '' : `\n        ${detail}`}`); cond ? ok++ : bad++; };
+const A = 'did:nostr:' + 'a1'.repeat(32), B = 'did:nostr:' + 'b2'.repeat(32), OP = 'did:nostr:' + 'c3'.repeat(32);
+const L = T.newLedger({ hash }, { operator: OP, name: 'ops', created: 1790900000 });
+T.credit(L, { account: A, txid: 'aa'.repeat(32), vout: 0, value: 500000 }, 1); T.credit(L, { account: B, txid: 'bb'.repeat(32), vout: 0, value: 400 }, 1);
+const now = 1790990000;
+const req = (id, account, amount, created_at, to = 'tb1p…') => ({ id, op: 'withdraw', account, amount, to, created_at });
+const reqs = [req('w3', A, 5000, now - 10), req('w1', A, 5000, now - 300), req('w2', A, 200000, now - 200), req('w4', B, 400, now - 50), req('w5', A, 100000, now - 5), { id: 't1', op: 'transfer', account: A, amount: 1, to: B, created_at: now }];
+const r = O.withdrawalsToPay(L, reqs, { maxPayout: 100000, maxHour: 105000, now });
+t('oldest first, under the caps: w1 then w3 then w5 (5,000 + 5,000 + 100,000 = 110,000 would pass the hour, so w5 waits)', r.pay.map((x) => x.id).join() === 'w1,w3', JSON.stringify(r.pay.map((x) => x.id)));
+t('the rest wait with a reason: w2 above the cap per payout, w4 below the minimum, w5 the hour', r.held.map((h) => h.request.id + ':' + h.why.split(' ')[0]).join() === 'w2:above,w4:below,w5:the', JSON.stringify(r.held.map((h) => [h.request.id, h.why])));
+t('a transfer is not a withdrawal', !r.pay.some((x) => x.op !== 'withdraw') && !r.held.some((x) => x.request.op !== 'withdraw'));
+T.debit(L, { id: 'w1', account: A, amount: 5000, to: 'tb1p…', txid: 'cd'.repeat(32) }, now - 100);
+const r2 = O.withdrawalsToPay(L, reqs, { maxPayout: 100000, maxHour: 105000, now });
+t('a paid request is not paid again; what was paid this hour counts against the cap', !r2.pay.some((x) => x.id === 'w1') && O.paidInHour(L, now) === 5000 && r2.pay.map((x) => x.id).join() === 'w3');
+t('an hour on, the cap is clear again', O.paidInHour(L, now + 3601) === 0 && O.withdrawalsToPay(L, reqs, { maxPayout: 100000, maxHour: 105000, now: now + 3601 }).pay.map((x) => x.id).join() === 'w3,w5');
+t('more than the account holds waits, saying so', O.withdrawalsToPay(L, [req('w9', B, 1000, now)], { maxPayout: 1e6, maxHour: 1e6, now }).held[0]?.why.includes('has 400 sat'));
+t('an address that does not decode waits', O.withdrawalsToPay(L, [req('w8', A, 1000, now, 'xyz')], { maxPayout: 1e6, maxHour: 1e6, now, decodes: (a) => a !== 'xyz' }).held[0]?.why.includes('decode'));
+console.log(`\n${ok} passed, ${bad} failed`); process.exit(bad ? 1 : 0);
