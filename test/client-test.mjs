@@ -52,5 +52,10 @@ const r3 = await c3.request({ op: 'transfer', amount: 999999, to: bob.did }, bob
 t('a transfer that overdraws is dropped from the local copy rather than shown as a negative balance; the operator will refuse it too', c3.balance(bob.did) >= 0 && c3.status(r3.id).state === 'dropped');
 t('a signer from a key has the did of its key; a bad hash is refused', alice.did.startsWith('did:nostr:') && await C.openLedger('xyz', {}).then(() => false, (e) => /64 hex/.test(e.message)));
 t('a ledger no relay has is refused', await C.openLedger('ab'.repeat(32), { T, deps, relays, net: { fetchLedger: async () => null, publish: async () => 'ok' } }).then(() => false, (e) => /no relay/.test(e.message)));
-c.stop(); c2.stop(); c3.stop();
+// Web Storage as it is (localStorage): getItem/setItem, not get/set
+const web = new Map(); const webStorage = { getItem: (k) => web.get(k) ?? null, setItem: (k, v) => web.set(k, String(v)) };
+const c4 = await C.openLedger(L.hash, { T, deps, relays, storage: webStorage, net, verifyNostrEvent }); await c4.request({ op: 'transfer', amount: 5, to: bob.did }, alice);
+const c5 = await C.openLedger(L.hash, { T, deps, relays, storage: webStorage, net, verifyNostrEvent });
+t('localStorage passed as it is (getItem/setItem) keeps the requests across a reload', web.size === 1 && c5.requests.length === 1 && c5.balance(alice.did) === c4.balance(alice.did));
+c.stop(); c2.stop(); c3.stop(); c4.stop(); c5.stop();
 console.log(`\n${ok} passed, ${bad} failed`); process.exit(bad ? 1 : 0);
