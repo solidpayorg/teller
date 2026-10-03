@@ -4,5 +4,5 @@
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "description": "A teller for Web Ledgers on txbt4: deposits, withdrawals and transfers for did:nostr accounts",
-  "scripts": { "test": "node test/teller-test.mjs && node test/operator-test.mjs" }
+  "scripts": { "test": "node test/teller-test.mjs && node test/operator-test.mjs && node test/client-test.mjs" }
 }
