@@ -28,6 +28,6 @@ What it is not: not private (anyone who knows the operator's point can link a le
 
 ## Releasing
 
-GitHub Pages serves `main` as it is. Run `npm test`, push.
+GitHub Pages serves `gh-pages` as it is. Run `npm test`, push.
 
 AGPL-3.0-or-later.
